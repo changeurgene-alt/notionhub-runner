@@ -183,7 +183,7 @@ jobs:
         if: steps.config.outputs.book == 'true' && steps.config.outputs.heatmap == 'true'
         working-directory: .notionhub-source/douban
         run: |
-          export NOTION_TOKEN="$(jq -r '.notion.targets.book.token' "$FREE_CONFIG_FILE")"
+          export NOTION_TOKEN="$BOOK_SYNC_NOTION_TOKEN"
           export DATABASE_ID="${{ steps.book_sync.outputs.day_database_id }}"
           test -n "$DATABASE_ID"
           NAME="$(jq -r '.account.name' "$FREE_CONFIG_FILE")"
