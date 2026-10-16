@@ -1,0 +1,51 @@
+name: 小宇宙独立同步
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: podcast-standalone-sync
+  cancel-in-progress: false
+jobs:
+  sync:
+    name: 同步小宇宙
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      PYTHONUNBUFFERED: '1'
+      NOTION_TOKEN: ${{ secrets.PODCAST_NOTION_TOKEN }}
+      REFRESH_TOKEN: ${{ secrets.PODCAST_REFRESH_TOKEN }}
+      NOTION_PAGE: https://www.notion.so/3fb0193e8d6881baa7dedaef254cd8b4
+      PODCAST_SOURCE_DIR: .podcast-source
+    steps:
+      - name: 检查登录配置
+        shell: bash
+        run: |
+          missing=0
+          if [ -z "$NOTION_TOKEN" ]; then
+            echo "::error::请添加 PODCAST_NOTION_TOKEN：只需授权现有播客模板。"
+            missing=1
+          fi
+          if [ -z "$REFRESH_TOKEN" ]; then
+            echo "::error::请添加 PODCAST_REFRESH_TOKEN：小宇宙登录凭证。"
+            missing=1
+          fi
+          if [ "$missing" -ne 0 ]; then exit 1; fi
+      - uses: actions/checkout@v4
+      - name: 获取固定开源版本
+        uses: actions/checkout@v4
+        with:
+          repository: malinkang/Podcast2Notion
+          ref: ed2f2484e5c675c31ff2d828db19868262aebbca
+          path: .podcast-source
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: 安装依赖并验证源码
+        run: |
+          test "$(git -C .podcast-source rev-parse HEAD)" = ed2f2484e5c675c31ff2d828db19868262aebbca
+          python -m pip install -r .podcast-source/requirements.txt
+          python -m unittest discover -s .podcast-source/tests
+      - name: 同步播客和收听历史
+        run: python scripts/podcast_standalone.py
