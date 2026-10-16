@@ -69,19 +69,25 @@ def main():
     stream=sys.argv[1]
     if stream not in ("movie","book"): raise ValueError("未知同步类型")
     client=Client(auth=os.environ["NOTION_TOKEN"])
-    database_id=os.environ["DATABASE_ID"]
+    database_id={"movie":"e500193e8d6883ba94338161609319df","book":"bcc0193e8d6883e1a59d810a897c2451"}[stream]
     root=os.environ["NOTION_CHART_ROOT"]
-    year=dt.datetime.now(dt.timezone(dt.timedelta(hours=9))).year
-    prop="看过" if stream=="movie" else "读过"
+    timezone=dt.timezone(dt.timedelta(hours=9))
+    year=dt.datetime.now(timezone).year
+    finished="看过" if stream=="movie" else "读过"
     counts={}; cursor=None
     while True:
         response=client.databases.query(database_id=database_id,start_cursor=cursor,page_size=100)
         for row in response["results"]:
             properties=row["properties"]
             date=(properties.get("日期",{}).get("date") or {}).get("start")
-            if not date or not date.startswith(str(year)): continue
-            date=date[:10]
-            counts[date]=counts.get(date,0)+numeric(properties.get(prop))
+            state=properties.get("状态",{})
+            status=(state.get("status") or state.get("select") or {}).get("name")
+            if not date or status!=finished: continue
+            day=dt.datetime.fromisoformat(date.replace("Z","+00:00"))
+            if day.tzinfo is not None: day=day.astimezone(timezone)
+            if day.year!=year: continue
+            key=day.date().isoformat()
+            counts[key]=counts.get(key,0)+1
         if not response.get("has_more"): break
         cursor=response["next_cursor"]
     label,unit=("观影记录","部") if stream=="movie" else ("阅读记录","本")
@@ -95,7 +101,7 @@ def main():
     if not found: raise RuntimeError("未找到现有热力图位置，已保存 SVG，未改动其他区块")
     block_id,kind=found
     if kind=="image": client.blocks.update(block_id=block_id,image={"external":{"url":url}})
-    else: client.blocks.update(block_id=block_id,embed={"url":url})
+    else: client.blocks.update(block_id=block_id,embed={"url":"https://heatmap.malinkang.com/?image="+quote(url,safe="")})
     print(f"{label}热力图完成：{year} 年共 {sum(counts.values())} {unit}",flush=True)
 
 if __name__=="__main__": main()
