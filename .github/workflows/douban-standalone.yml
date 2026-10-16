@@ -174,8 +174,8 @@ jobs:
           export DATABASE_ID="${{ steps.movie_sync.outputs.day_database_id }}"
           test -n "$DATABASE_ID"
           NAME="$(jq -r '.account.name' "$FREE_CONFIG_FILE")"
-          github_heatmap notion --notion_token "$NOTION_TOKEN" --database_id "$DATABASE_ID" --date_prop_name "日期" --value_prop_name "看过" --unit "部" --year "$(date +%Y)" --me "$NAME" --without-type-name
-          heatmap movie
+          export NOTION_CHART_ROOT="$(jq -r '.notion.targets.movie.pages.root' "$FREE_CONFIG_FILE")"
+          python "$GITHUB_WORKSPACE/scripts/douban_heatmap.py" movie
 
       - name: 生成豆瓣图书热力图
         id: book_heatmap
@@ -187,8 +187,8 @@ jobs:
           export DATABASE_ID="${{ steps.book_sync.outputs.day_database_id }}"
           test -n "$DATABASE_ID"
           NAME="$(jq -r '.account.name' "$FREE_CONFIG_FILE")"
-          github_heatmap notion --notion_token "$NOTION_TOKEN" --database_id "$DATABASE_ID" --date_prop_name "日期" --value_prop_name "读过" --unit "本" --year "$(date +%Y)" --me "$NAME" --without-type-name
-          heatmap book
+          export NOTION_CHART_ROOT="7360193e-8d68-8382-b137-8186617f78ec"
+          python "$GITHUB_WORKSPACE/scripts/douban_heatmap.py" book
       - name: 保存公开热力图
         continue-on-error: true
         if: steps.config.outputs.heatmap == 'true' && (steps.config.outputs.movie == 'true' || steps.config.outputs.book == 'true')
