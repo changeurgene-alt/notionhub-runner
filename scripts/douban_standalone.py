@@ -3,6 +3,7 @@ import os
 import sys
 import time
 import requests
+from urllib.parse import urlsplit
 from notion_client import Client
 from notion_client.errors import APIResponseError
 
@@ -10,7 +11,22 @@ raw_get = requests.get
 def checked_get(*args, **kwargs):
     kwargs.setdefault("timeout", 30)
     response = raw_get(*args, **kwargs)
-    response.raise_for_status()
+    if response.status_code in (400, 401) and urlsplit(args[0] if args else kwargs.get("url", "")).hostname == "frodo.douban.com":
+        headers = dict(kwargs.get("headers") or {})
+        if headers.get("authorization"):
+            headers.pop("authorization", None)
+            public_kwargs = dict(kwargs, headers=headers)
+            public_response = raw_get(*args, **public_kwargs)
+            if public_response.ok:
+                response = public_response
+    if not response.ok:
+        try:
+            data = response.json()
+            code = data.get("code", data.get("error_code", "unknown"))
+            message = str(data.get("msg", data.get("message", "")))[:120]
+        except ValueError:
+            code, message = "unknown", ""
+        raise RuntimeError(f"豆瓣接口 HTTP {response.status_code}; code={code}; {message}")
     return response
 requests.get = checked_get
 
