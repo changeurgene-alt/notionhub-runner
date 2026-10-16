@@ -82,6 +82,8 @@ def main():
     spec = importlib.util.spec_from_file_location("podcast_upstream", source / "podcast.py")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
+    # Keep private listening titles out of this public repository's action logs.
+    module.print = lambda *args, **kwargs: None
     helper = module.NotionHelper()
     expected = {
         "podcast_database_id": "5140193e8d68834390bf01ec3552c0e0",
