@@ -4,6 +4,12 @@ run-name: ${{ github.workflow }}
 
 on:
   workflow_dispatch:
+    inputs:
+      scope:
+        description: 同步范围（all 全部、book 图书、movie 电影）
+        type: choice
+        options: [all, book, movie]
+        default: all
   schedule:
     - cron: "20 16 * * *"
 
@@ -21,6 +27,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 90
     env:
+      SYNC_SCOPE: ${{ github.event.inputs.scope || 'all' }}
       PYTHONUNBUFFERED: '1'
       FREE_CONFIG_JSON: ${{ secrets.DOUBAN_FREE_CONFIG }}
       SOURCE_REPOSITORY: malinkang/douban2notion
@@ -90,8 +97,12 @@ jobs:
             require_value '.notion.targets.book.pages.root' '豆瓣图书模板'
           fi
           echo "FREE_CONFIG_FILE=$CONFIG_FILE" >> "$GITHUB_ENV"
-          echo "movie=$(jq -r '(.options.streams // []) | index("movie") != null' "$CONFIG_FILE")" >> "$GITHUB_OUTPUT"
-          echo "book=$(jq -r '(.options.streams // []) | index("book") != null' "$CONFIG_FILE")" >> "$GITHUB_OUTPUT"
+          MOVIE=$(jq -r '(.options.streams // []) | index("movie") != null' "$CONFIG_FILE")
+          [ "$SYNC_SCOPE" = "book" ] && MOVIE=false
+          echo "movie=$MOVIE" >> "$GITHUB_OUTPUT"
+          BOOK=$(jq -r '(.options.streams // []) | index("book") != null' "$CONFIG_FILE")
+          [ "$SYNC_SCOPE" = "movie" ] && BOOK=false
+          echo "book=$BOOK" >> "$GITHUB_OUTPUT"
           echo "heatmap=$(jq -r '.options.heatmap // true' "$CONFIG_FILE")" >> "$GITHUB_OUTPUT"
 
       - name: Checkout 固定开源版本
@@ -157,6 +168,7 @@ jobs:
           PY
 
       - name: 同步豆瓣电影
+        id: movie_sync
         if: steps.config.outputs.movie == 'true'
         working-directory: .notionhub-source/douban
         run: |
@@ -165,18 +177,10 @@ jobs:
           export DOUBAN_NAME="$(jq -r '.account.name' "$FREE_CONFIG_FILE")"
           export AUTH_TOKEN="$(jq -r '.account.authToken // ""' "$FREE_CONFIG_FILE")"
           python "$RUNNER_TEMP/douban-paced.py" movie
-
-      - name: 生成豆瓣电影热力图
-        if: steps.config.outputs.movie == 'true' && steps.config.outputs.heatmap == 'true'
-        working-directory: .notionhub-source/douban
-        run: |
-          export NOTION_TOKEN="$(jq -r '.notion.targets.movie.token' "$FREE_CONFIG_FILE")"
-          export DATABASE_ID="$(jq -r '.notion.targets.movie.pages.root' "$FREE_CONFIG_FILE")"
-          NAME="$(jq -r '.account.name' "$FREE_CONFIG_FILE")"
-          github_heatmap notion --notion_token "$NOTION_TOKEN" --database_id "$DATABASE_ID" --date_prop_name "日期" --value_prop_name "看过" --unit "部" --year "$(date +%Y)" --me "$NAME" --without-type-name
-          heatmap movie
+          sed -n 's/^DATABASE_ID=/day_database_id=/p' "$GITHUB_ENV" | tail -1 >> "$GITHUB_OUTPUT"
 
       - name: 同步豆瓣图书
+        id: book_sync
         if: steps.config.outputs.book == 'true'
         working-directory: .notionhub-source/douban
         run: |
@@ -185,17 +189,35 @@ jobs:
           export DOUBAN_NAME="$(jq -r '.account.name' "$FREE_CONFIG_FILE")"
           export AUTH_TOKEN="$(jq -r '.account.authToken // ""' "$FREE_CONFIG_FILE")"
           python "$RUNNER_TEMP/douban-paced.py" book
+          sed -n 's/^DATABASE_ID=/day_database_id=/p' "$GITHUB_ENV" | tail -1 >> "$GITHUB_OUTPUT"
+
+      - name: 生成豆瓣电影热力图
+        id: movie_heatmap
+        continue-on-error: true
+        if: steps.config.outputs.movie == 'true' && steps.config.outputs.heatmap == 'true'
+        working-directory: .notionhub-source/douban
+        run: |
+          export NOTION_TOKEN="$(jq -r '.notion.targets.movie.token' "$FREE_CONFIG_FILE")"
+          export DATABASE_ID="${{ steps.movie_sync.outputs.day_database_id }}"
+          test -n "$DATABASE_ID"
+          NAME="$(jq -r '.account.name' "$FREE_CONFIG_FILE")"
+          github_heatmap notion --notion_token "$NOTION_TOKEN" --database_id "$DATABASE_ID" --date_prop_name "日期" --value_prop_name "看过" --unit "部" --year "$(date +%Y)" --me "$NAME" --without-type-name
+          heatmap movie
 
       - name: 生成豆瓣图书热力图
+        id: book_heatmap
+        continue-on-error: true
         if: steps.config.outputs.book == 'true' && steps.config.outputs.heatmap == 'true'
         working-directory: .notionhub-source/douban
         run: |
           export NOTION_TOKEN="$(jq -r '.notion.targets.book.token' "$FREE_CONFIG_FILE")"
-          export DATABASE_ID="$(jq -r '.notion.targets.book.pages.root' "$FREE_CONFIG_FILE")"
+          export DATABASE_ID="${{ steps.book_sync.outputs.day_database_id }}"
+          test -n "$DATABASE_ID"
           NAME="$(jq -r '.account.name' "$FREE_CONFIG_FILE")"
           github_heatmap notion --notion_token "$NOTION_TOKEN" --database_id "$DATABASE_ID" --date_prop_name "日期" --value_prop_name "读过" --unit "本" --year "$(date +%Y)" --me "$NAME" --without-type-name
           heatmap book
       - name: 保存公开热力图
+        continue-on-error: true
         if: steps.config.outputs.heatmap == 'true' && (steps.config.outputs.movie == 'true' || steps.config.outputs.book == 'true')
         shell: bash
         run: |
