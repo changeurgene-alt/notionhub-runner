@@ -13,6 +13,8 @@ on:
         description: 触发原因
         required: false
         default: manual
+  schedule:
+    - cron: "10 16 * * *"
 
 
 permissions:
