@@ -50,37 +50,10 @@ jobs:
           echo "::add-mask::$OIDC_TOKEN"
           AUTHORIZATION_FILE="$RUNNER_TEMP/notionhub-free-douban-authorization.json"
           trap 'rm -f "$AUTHORIZATION_FILE"' EXIT
-          if ! curl --fail-with-body -sS --max-time 30 -X POST \
+          if ! curl -fsS --max-time 30 -X POST \
             "https://i.notionhub.app/v1/github/runner/free/douban/authorize-run" \
             -H "Authorization: Bearer $OIDC_TOKEN" -H 'Content-Type: application/json' \
             --data '{}' -o "$AUTHORIZATION_FILE"; then
-            python3 - "$AUTHORIZATION_FILE" <<'PY'
-          import json, re, sys
-          try:
-              with open(sys.argv[1], encoding="utf-8") as f:
-                  body = json.load(f)
-          except Exception:
-              print("Authorization diagnostic: response is empty or non-JSON.")
-              sys.exit(0)
-          def safe(value):
-              text = str(value).replace("\r", " ").replace("\n", " ")[:400]
-              text = re.sub(r"https?://[^ ]+", "[url]", text)
-              text = re.sub(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+", "[email]", text)
-              text = re.sub(r"[A-Za-z0-9_./+=-]{24,}", "[redacted]", text)
-              return text.replace("::", ": ")
-          def report(obj, prefix="response"):
-              if not isinstance(obj, dict):
-                  return
-              for key in ("code", "error_code", "error", "message", "detail", "reason"):
-                  value = obj.get(key)
-                  if isinstance(value, (str, int, bool)):
-                      print("Authorization diagnostic " + prefix + "." + key + ": " + safe(value))
-                  elif isinstance(value, dict):
-                      report(value, prefix + "." + key)
-              if isinstance(obj.get("data"), dict):
-                  report(obj["data"], prefix + ".data")
-          report(body)
-          PY
             echo "::error title=免费版同步授权失败::账号可能已退出或正在清理，请回到 NotionHub 插件查看连接状态。"
             exit 1
           fi
