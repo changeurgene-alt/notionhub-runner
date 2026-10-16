@@ -1,6 +1,8 @@
 name: 小宇宙独立同步
 on:
   workflow_dispatch:
+  schedule:
+    - cron: "50 16 * * *"
 permissions:
   contents: read
 concurrency:
