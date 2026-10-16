@@ -58,6 +58,9 @@ if len(sys.argv) > 1 and sys.argv[1] == "book" and os.getenv("LEGACY_BOOK_TEMPLA
     original_query_all = Helper.query_all
     original_properties = utils.get_properties
     active = [None]
+    existing_all = {}
+    existing_cover = {}
+    record_cover = {}
 
     def init(self, kind):
         original_init(self, kind)
@@ -73,6 +76,9 @@ if len(sys.argv) > 1 and sys.argv[1] == "book" and os.getenv("LEGACY_BOOK_TEMPLA
         if database_id == self.book_database_id:
             for row in rows:
                 properties = row.get("properties", {})
+                url = (properties.get("豆瓣") or properties.get("豆瓣链接") or {}).get("url")
+                existing_all[url] = bool(properties.get("全部", {}).get("relation"))
+                existing_cover[row["id"]] = bool(row.get("cover"))
                 if "豆瓣" in properties and "豆瓣链接" not in properties:
                     properties["豆瓣链接"] = properties["豆瓣"]
         return rows
@@ -81,6 +87,13 @@ if len(sys.argv) > 1 and sys.argv[1] == "book" and os.getenv("LEGACY_BOOK_TEMPLA
         result = original_properties(data, types)
         if "豆瓣链接" in result:
             result["豆瓣"] = result.pop("豆瓣链接")
+        url = data.get("豆瓣链接")
+        if data.get("封面"):
+            record_cover[url] = data["封面"]
+        helper = active[0]
+        total_id = helper.database_id_dict.get("全部")
+        if total_id and url and not existing_all.get(url):
+            result["全部"] = {"relation": [{"id": helper.get_relation_id("全部", total_id, "https://www.notion.so/icons/target_gray.svg")}]}
         # The existing template uses page covers, not a file property.
         result.pop("封面", None)
         publishers = result.pop("出版社", None)
@@ -98,6 +111,24 @@ if len(sys.argv) > 1 and sys.argv[1] == "book" and os.getenv("LEGACY_BOOK_TEMPLA
         return self.get_relation_id(day, self.day_database_id, "https://www.notion.so/icons/target_gray.svg",
             {"日期": utils.get_date(utils.format_date(date))})
 
+    from retrying import retry
+    @retry(stop_max_attempt_number=3, wait_fixed=5000)
+    def create_page(self, parent, properties, icon):
+        kwargs = dict(parent=parent, properties=properties, icon=icon)
+        if parent.get("database_id") == self.book_database_id:
+            kwargs["cover"] = icon
+        return self.client.pages.create(**kwargs)
+
+    @retry(stop_max_attempt_number=3, wait_fixed=5000)
+    def update_page(self, page_id, properties):
+        kwargs = dict(page_id=page_id, properties=properties)
+        url = properties.get("豆瓣", {}).get("url")
+        if url in record_cover and not existing_cover.get(page_id):
+            kwargs["cover"] = utils.get_icon(record_cover[url])
+        return self.client.pages.update(**kwargs)
+
+    Helper.create_page = create_page
+    Helper.update_page = update_page
     Helper.get_day_relation_id = day_relation
     Helper.__init__ = init
     Helper.query_all = query_all
