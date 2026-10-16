@@ -6,9 +6,9 @@ on:
   workflow_dispatch:
     inputs:
       scope:
-        description: 同步范围（all 全部、book 图书、movie 电影）
+        description: 同步范围（all 全部、book 图书、movie 电影、charts 仅统计图）
         type: choice
-        options: [all, book, movie]
+        options: [all, book, movie, charts]
         default: all
   schedule:
     - cron: "20 16 * * *"
@@ -140,7 +140,7 @@ jobs:
 
       - name: 同步豆瓣电影
         id: movie_sync
-        if: steps.config.outputs.movie == 'true'
+        if: steps.config.outputs.movie == 'true' && env.SYNC_SCOPE != 'charts'
         working-directory: .notionhub-source/douban
         run: |
           export NOTION_TOKEN="$(jq -r '.notion.targets.movie.token' "$FREE_CONFIG_FILE")"
@@ -152,7 +152,7 @@ jobs:
 
       - name: 同步豆瓣图书
         id: book_sync
-        if: steps.config.outputs.book == 'true'
+        if: steps.config.outputs.book == 'true' && env.SYNC_SCOPE != 'charts'
         working-directory: .notionhub-source/douban
         run: |
           test -n "$BOOK_SYNC_NOTION_TOKEN"
@@ -171,7 +171,7 @@ jobs:
         working-directory: .notionhub-source/douban
         run: |
           export NOTION_TOKEN="$(jq -r '.notion.targets.movie.token' "$FREE_CONFIG_FILE")"
-          export DATABASE_ID="${{ steps.movie_sync.outputs.day_database_id }}"
+          export DATABASE_ID="${{ steps.movie_sync.outputs.day_database_id || '4f10193e8d688205aa8781d2c2370c3f' }}"
           test -n "$DATABASE_ID"
           NAME="$(jq -r '.account.name' "$FREE_CONFIG_FILE")"
           export NOTION_CHART_ROOT="$(jq -r '.notion.targets.movie.pages.root' "$FREE_CONFIG_FILE")"
@@ -184,7 +184,7 @@ jobs:
         working-directory: .notionhub-source/douban
         run: |
           export NOTION_TOKEN="$BOOK_SYNC_NOTION_TOKEN"
-          export DATABASE_ID="${{ steps.book_sync.outputs.day_database_id }}"
+          export DATABASE_ID="${{ steps.book_sync.outputs.day_database_id || 'ff00193e8d68830ba4e8819a449440a0' }}"
           test -n "$DATABASE_ID"
           NAME="$(jq -r '.account.name' "$FREE_CONFIG_FILE")"
           export NOTION_CHART_ROOT="7360193e-8d68-8382-b137-8186617f78ec"
