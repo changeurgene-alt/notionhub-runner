@@ -4,6 +4,8 @@ run-name: ${{ github.workflow }}
 
 on:
   workflow_dispatch:
+  schedule:
+    - cron: "20 16 * * *"
 
 
 permissions:
@@ -17,7 +19,7 @@ jobs:
   sync:
     name: 同步豆瓣
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 90
     env:
       PYTHONUNBUFFERED: '1'
       FREE_CONFIG_JSON: ${{ secrets.DOUBAN_FREE_CONFIG }}
