@@ -121,28 +121,18 @@ jobs:
           python -m pip install -r requirements.txt
           python -m pip install .
 
-      - name: 检查豆瓣接口连接
-        working-directory: .notionhub-source/douban
-        run: |
-          python - <<'PY'
-          import json, os, requests
-          c=json.load(open(os.environ["FREE_CONFIG_FILE"]))
-          token=c["account"].get("authToken","")
-          r=requests.get("https://frodo.douban.com/api/v2/user/"+c["account"]["name"]+"/interests",
-              params={"type":"movie","status":"done","count":1,"start":0,"apiKey":"0ac44ae016490db2204ce0a042db2916"},
-              headers={"authorization":f"Bearer {token}" if token else "", "user-agent":"Mozilla/5.0 (iPhone; CPU iPhone OS 15_3 like Mac OS X)", "referer":"https://servicewechat.com/wx2f9b06c1de1ccfca/84/page-frame.html"},
-              timeout=30)
-          print("Douban HTTP:",r.status_code,flush=True)
-          if not r.ok: raise SystemExit("豆瓣接口拒绝访问；已停止，未继续同步。")
-          d=r.json()
-          if not isinstance(d.get("interests"),list): raise SystemExit("豆瓣返回格式异常")
-          print("豆瓣连接成功，返回条目数:",len(d["interests"]),flush=True)
-          PY
-
       - name: 设置 Notion 请求节流和限流重试
         run: |
           cat > "$RUNNER_TEMP/douban-paced.py" <<'PY'
           import time
+          import requests
+          raw_get=requests.get
+          def checked_get(*args,**kwargs):
+              kwargs.setdefault('timeout',30)
+              response=raw_get(*args,**kwargs)
+              response.raise_for_status()
+              return response
+          requests.get=checked_get
           from notion_client import Client
           from notion_client.errors import APIResponseError
           original=Client.request
