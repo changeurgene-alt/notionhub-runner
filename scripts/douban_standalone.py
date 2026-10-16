@@ -93,6 +93,12 @@ if len(sys.argv) > 1 and sys.argv[1] == "book" and os.getenv("LEGACY_BOOK_TEMPLA
             ]}
         return result
 
+    def day_relation(self, date):
+        day = date.strftime("%Y年%m月%d日")
+        return self.get_relation_id(day, self.day_database_id, "https://www.notion.so/icons/target_gray.svg",
+            {"日期": utils.get_date(utils.format_date(date))})
+
+    Helper.get_day_relation_id = day_relation
     Helper.__init__ = init
     Helper.query_all = query_all
     utils.get_properties = properties
