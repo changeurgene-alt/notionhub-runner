@@ -28,6 +28,7 @@ jobs:
     timeout-minutes: 90
     env:
       SYNC_SCOPE: ${{ github.event.inputs.scope || 'all' }}
+      BOOK_SYNC_NOTION_TOKEN: ${{ secrets.PODCAST_NOTION_TOKEN }}
       PYTHONUNBUFFERED: '1'
       FREE_CONFIG_JSON: ${{ secrets.DOUBAN_FREE_CONFIG }}
       SOURCE_REPOSITORY: malinkang/douban2notion
@@ -134,38 +135,8 @@ jobs:
           python -m pip install -r requirements.txt
           python -m pip install .
 
-      - name: 设置 Notion 请求节流和限流重试
-        run: |
-          cat > "$RUNNER_TEMP/douban-paced.py" <<'PY'
-          import time
-          import requests
-          raw_get=requests.get
-          def checked_get(*args,**kwargs):
-              kwargs.setdefault('timeout',30)
-              response=raw_get(*args,**kwargs)
-              response.raise_for_status()
-              return response
-          requests.get=checked_get
-          from notion_client import Client
-          from notion_client.errors import APIResponseError
-          original=Client.request
-          last=[0.0]
-          def paced(self,*args,**kwargs):
-              for attempt in range(10):
-                  time.sleep(max(0,0.5-(time.monotonic()-last[0])))
-                  last[0]=time.monotonic()
-                  try:
-                      return original(self,*args,**kwargs)
-                  except APIResponseError as e:
-                      if e.status != 429: raise
-                      delay=max(2,float(e.headers.get("Retry-After",2)))
-                      print(f"Notion 请求限流，等待 {delay:g} 秒后重试",flush=True)
-                      time.sleep(delay)
-              raise RuntimeError("Notion 持续限流，已安全停止；可稍后继续同步")
-          Client.request=paced
-          from douban2notion.douban import main
-          main()
-          PY
+      - name: 校验同步适配器
+        run: python -m py_compile scripts/douban_standalone.py
 
       - name: 同步豆瓣电影
         id: movie_sync
@@ -176,7 +147,7 @@ jobs:
           export NOTION_MOVIE_URL="$(jq -r '.notion.targets.movie.pages.root' "$FREE_CONFIG_FILE")"
           export DOUBAN_NAME="$(jq -r '.account.name' "$FREE_CONFIG_FILE")"
           export AUTH_TOKEN="$(jq -r '.account.authToken // ""' "$FREE_CONFIG_FILE")"
-          python "$RUNNER_TEMP/douban-paced.py" movie
+          python "$GITHUB_WORKSPACE/scripts/douban_standalone.py" movie
           sed -n 's/^DATABASE_ID=/day_database_id=/p' "$GITHUB_ENV" | tail -1 >> "$GITHUB_OUTPUT"
 
       - name: 同步豆瓣图书
@@ -184,11 +155,13 @@ jobs:
         if: steps.config.outputs.book == 'true'
         working-directory: .notionhub-source/douban
         run: |
-          export NOTION_TOKEN="$(jq -r '.notion.targets.book.token' "$FREE_CONFIG_FILE")"
-          export NOTION_BOOK_URL="$(jq -r '.notion.targets.book.pages.root' "$FREE_CONFIG_FILE")"
+          test -n "$BOOK_SYNC_NOTION_TOKEN"
+          export NOTION_TOKEN="$BOOK_SYNC_NOTION_TOKEN"
+          export NOTION_BOOK_URL="https://www.notion.so/7360193e8d688382b1378186617f78ec"
+          export LEGACY_BOOK_TEMPLATE=true
           export DOUBAN_NAME="$(jq -r '.account.name' "$FREE_CONFIG_FILE")"
           export AUTH_TOKEN="$(jq -r '.account.authToken // ""' "$FREE_CONFIG_FILE")"
-          python "$RUNNER_TEMP/douban-paced.py" book
+          python "$GITHUB_WORKSPACE/scripts/douban_standalone.py" book
           sed -n 's/^DATABASE_ID=/day_database_id=/p' "$GITHUB_ENV" | tail -1 >> "$GITHUB_OUTPUT"
 
       - name: 生成豆瓣电影热力图
