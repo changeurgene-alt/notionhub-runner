@@ -102,8 +102,7 @@ def main():
     print(json.dumps({'source_counts':counts,'total':len(rows)},ensure_ascii=False))
     if args.dry_run:
         Path(os.getenv('MUSIC_PREVIEW','music-preview.json')).write_text(json.dumps(rows,ensure_ascii=False,indent=2));return
-    config=json.loads(os.getenv('FREE_CONFIG_JSON','{}'))
-    tokens=[config.get('notion',{}).get('targets',{}).get('movie',{}).get('token'),os.getenv('NOTION_TOKEN')]
+    tokens=[os.getenv('NOTION_TOKEN')]
     client=None
     for token in dict.fromkeys(t for t in tokens if t):
         candidate=Notion(token)
