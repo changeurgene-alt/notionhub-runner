@@ -96,6 +96,7 @@ def properties(row,client):
     return p
 
 def main():
+    global SOURCE, ARTISTS, GENRES
     parser=argparse.ArgumentParser();parser.add_argument('--dry-run',action='store_true');args=parser.parse_args()
     counts,rows=fetch_all()
     print(json.dumps({'source_counts':counts,'total':len(rows)},ensure_ascii=False))
@@ -106,8 +107,17 @@ def main():
     client=None
     for token in dict.fromkeys(t for t in tokens if t):
         candidate=Notion(token)
-        try:candidate.call('GET',f'data_sources/{SOURCE}');client=candidate;break
-        except RuntimeError:continue
+        try:
+            db=candidate.call('GET','databases/b830193e-8d68-8289-9d7f-0129e8c7b01a')
+            sources=db.get('data_sources',[])
+            if len(sources)!=1:raise RuntimeError('音乐源数量异常')
+            SOURCE=sources[0]['id']
+            schema=candidate.call('GET',f'data_sources/{SOURCE}')['properties']
+            if '音乐名' not in schema or '豆瓣' not in schema:raise RuntimeError('音乐库结构异常')
+            ARTISTS=schema['歌手']['relation']['data_source_id'];GENRES=schema['分类']['relation']['data_source_id']
+            client=candidate;break
+        except RuntimeError as error:
+            print('连接检查:',str(error));continue
     if client is None:raise RuntimeError('音乐页面尚未授权给现有同步连接，需要仅授权该音乐页面')
     client.cache={};existing={}
     for record in client.query(SOURCE):
