@@ -1,0 +1,33 @@
+name: 豆瓣音乐同步
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - scripts/douban_music.py
+      - .github/workflows/douban-music.yml
+  schedule:
+    - cron: '15 17 * * *'
+permissions:
+  contents: read
+concurrency:
+  group: douban-music-sync
+  cancel-in-progress: false
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: 安装依赖
+        run: python -m pip install 'requests==2.32.5' 'beautifulsoup4==4.14.3'
+      - name: 同步音乐并核对
+        env:
+          FREE_CONFIG_JSON: ${{ secrets.DOUBAN_FREE_CONFIG }}
+          NOTION_TOKEN: ${{ secrets.PODCAST_NOTION_TOKEN }}
+          PYTHONUNBUFFERED: '1'
+        run: python scripts/douban_music.py
