@@ -52,6 +52,31 @@ from douban2notion import douban, notion_helper, utils
 # Upstream book code prints complete Notion records; keep those out of public logs.
 douban.print = lambda *args, **kwargs: None
 
+
+# IMDb enrichment is optional: a blocked detail page must not stop the sync.
+original_get_imdb = douban.get_imdb
+imdb_blocked = [False]
+def optional_get_imdb(link):
+    if imdb_blocked[0]:
+        return None
+    try:
+        return original_get_imdb(link)
+    except (requests.RequestException, RuntimeError) as error:
+        if isinstance(error, RuntimeError) and "HTTP 403" not in str(error) and "HTTP 429" not in str(error):
+            raise
+        imdb_blocked[0] = True
+        print("IMDb 补充暂不可用；跳过本次补充并继续同步。", flush=True)
+        return None
+douban.get_imdb = optional_get_imdb
+
+original_optional_properties = utils.get_properties
+def optional_properties(data, types):
+    if "IMDB" in data and data["IMDB"] is None:
+        data = dict(data)
+        data.pop("IMDB")
+    return original_optional_properties(data, types)
+utils.get_properties = optional_properties
+
 if len(sys.argv) > 1 and sys.argv[1] == "book" and os.getenv("LEGACY_BOOK_TEMPLATE") == "true":
     Helper = notion_helper.NotionHelper
     original_init = Helper.__init__
